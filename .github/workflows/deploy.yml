@@ -1,61 +1,71 @@
-name: CI/CD Pipeline for Kubernetes Deployment
+name: CI/CD Pipeline for Minikube Deployment
 
 on:
   push:
     branches:
-      - main  # Change this if using a different branch
+      - main  # Runs when pushing to the main branch
   pull_request:
+    branches:
+      - main
+
+env:
+  IMAGE_NAME: ghcr.io/dipendu1/cicd/my-app:latest  # ✅ Ensure username is lowercase
+  MINIKUBE_DRIVER: docker  # ✅ Minikube runs on Docker
+  KUBERNETES_VERSION: v1.32.0  # ✅ Your Minikube/K8s version
+  REGISTRY: ghcr.io  # ✅ GitHub Container Registry
 
 jobs:
-  build:
-    name: Build Docker Image
+  build-and-push:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write  # ✅ Required for pushing to GitHub Container Registry (GHCR)
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-        
-      - name: Set Up Docker Buildx
-        uses: docker/setup-buildx-action@v2
 
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v2
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Build and Push Docker Image
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Build Docker Image
         run: |
-          IMAGE_NAME=ghcr.io/$dipendu1/my-app:latest
           docker build -t $IMAGE_NAME .
+          echo "✅ Docker Image Built: $IMAGE_NAME"
+
+      - name: Push Docker Image to GHCR
+        run: |
           docker push $IMAGE_NAME
-        env:
-          DOCKER_CLI_AWS: "enabled"
+          echo "✅ Docker Image Pushed to GHCR"
 
   deploy:
-    name: Deploy to Kubernetes
+    needs: build-and-push  # ✅ Only run after the image is built and pushed
     runs-on: ubuntu-latest
-    needs: build
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Install Kubectl
-        run: |
-          curl -LO "https://dl.k8s.io/release/v1.32.2/bin/linux/amd64/kubectl"
-          chmod +x kubectl
-          sudo mv kubectl /usr/local/bin/
+      - name: Set up Minikube
+        uses: medyagh/setup-minikube@latest
+        with:
+          driver: docker
+          kubernetes-version: ${{ env.KUBERNETES_VERSION }}
 
-      - name: Set Up Kubeconfig
+      - name: Load Docker Image into Minikube
         run: |
-          echo "${{ secrets.KUBECONFIG }}" > kubeconfig.yaml
-          export KUBECONFIG=kubeconfig.yaml
+          minikube image load $IMAGE_NAME
+          echo "✅ Docker Image Loaded into Minikube"
 
-      - name: Apply Kubernetes Manifests
+      - name: Deploy to Minikube
         run: |
           kubectl apply -f deployment.yaml
           kubectl apply -f service.yaml
           kubectl rollout status deployment/my-app
+          echo "✅ Deployment Successful!"
 
       - name: Verify Deployment
         run: |
