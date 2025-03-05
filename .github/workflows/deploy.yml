@@ -26,7 +26,7 @@ jobs:
 
       - name: Build and Push Docker Image
         run: |
-          IMAGE_NAME=ghcr.io/${{ github.repository }}/my-app:latest
+          IMAGE_NAME=ghcr.io/$dipendu1/my-app:latest
           docker build -t $IMAGE_NAME .
           docker push $IMAGE_NAME
         env:
